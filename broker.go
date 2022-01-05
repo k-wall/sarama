@@ -1,6 +1,7 @@
 package sarama
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
@@ -23,6 +24,7 @@ type Broker struct {
 
 	id            int32
 	addr          string
+	resolvedAddrs []string
 	correlationID int32
 	conn          net.Conn
 	connErr       error
@@ -172,10 +174,24 @@ func (b *Broker) Open(conf *Config) error {
 				}
 			}
 		}()
+
+		if len(b.resolvedAddrs) == 0 {
+			err := resolveAddresses(b)
+			if err != nil {
+				b.connErr = err
+				Logger.Printf("Failed to resolve addresses for broker %s: %s\n", b.addr, b.connErr)
+				atomic.StoreInt32(&b.opened, 0)
+				return
+			}
+		}
+
+		// KWFIXME: handle proxy case
+
+		resolvedAddr := b.popFirstResolvedAddress()
 		dialer := conf.getDialer()
-		b.conn, b.connErr = dialer.Dial("tcp", b.addr)
+		b.conn, b.connErr = dialer.Dial("tcp", resolvedAddr)
 		if b.connErr != nil {
-			Logger.Printf("Failed to connect to broker %s: %s\n", b.addr, b.connErr)
+			Logger.Printf("Failed to connect to broker %s [%s]: %s\n", b.addr, resolvedAddr, b.connErr)
 			b.conn = nil
 			atomic.StoreInt32(&b.opened, 0)
 			return
@@ -208,7 +224,7 @@ func (b *Broker) Open(conf *Config) error {
 			if b.connErr != nil {
 				err = b.conn.Close()
 				if err == nil {
-					DebugLogger.Printf("Closed connection to broker %s\n", b.addr)
+					DebugLogger.Printf("Closed connection to broker %s [%s]\n", b.addr, resolvedAddr)
 				} else {
 					Logger.Printf("Error while closing connection to broker %s: %s\n", b.addr, err)
 				}
@@ -230,6 +246,44 @@ func (b *Broker) Open(conf *Config) error {
 	})
 
 	return nil
+}
+
+func resolveAddresses(b *Broker) (err error) {
+	host, port, err := net.SplitHostPort(b.addr)
+	if err != nil {
+		return
+	}
+
+	ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip", host)
+	if err != nil {
+		return
+	}
+	ips = filterPreferredAddresses(ips)
+	b.resolvedAddrs = make([]string, len(ips))
+	for i, ip := range ips {
+		if port == "" {
+			b.resolvedAddrs[i] = ip.String()
+		} else {
+			b.resolvedAddrs[i] = fmt.Sprintf("%s:%s", ip.String(), port)
+		}
+	}
+	DebugLogger.Printf("Resolved %s to [%s}\n", b.addr, b.resolvedAddrs)
+	return nil
+}
+
+func filterPreferredAddresses(ips []net.IP) []net.IP {
+	var first *bool
+	out := make([]net.IP, 0)
+	for _, ip := range ips {
+		isv4 := ip.To4() != nil
+		if first == nil {
+			first = &isv4
+		}
+		if *first == isv4 {
+			out = append(out, ip)
+		}
+	}
+	return out
 }
 
 // Connected returns true if the broker is connected and false otherwise. If the broker is not
@@ -1580,6 +1634,12 @@ func (b *Broker) registerCounter(name string) metrics.Counter {
 	nameForBroker := getMetricNameForBroker(name, b)
 	b.registeredMetrics = append(b.registeredMetrics, nameForBroker)
 	return metrics.GetOrRegisterCounter(nameForBroker, b.conf.MetricRegistry)
+}
+
+func (b *Broker) popFirstResolvedAddress() string {
+	first := b.resolvedAddrs[0]
+	b.resolvedAddrs = b.resolvedAddrs[1:]
+	return first
 }
 
 func validServerNameTLS(addr string, cfg *tls.Config) *tls.Config {
