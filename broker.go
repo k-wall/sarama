@@ -193,8 +193,9 @@ func (b *Broker) Open(conf *Config) error {
 
 		dialer := conf.getDialer()
 		b.conn, b.connErr = dialer.Dial("tcp", targetAddr)
+		debugFmtAddr := prettyAddress(b.addr, targetAddr)
 		if b.connErr != nil {
-			Logger.Printf("Failed to connect to broker %s [%s]: %s\n", b.addr, targetAddr, b.connErr)
+			Logger.Printf("Failed to connect to broker %s: %s\n", debugFmtAddr, b.connErr)
 			b.conn = nil
 			atomic.StoreInt32(&b.opened, 0)
 			return
@@ -227,9 +228,9 @@ func (b *Broker) Open(conf *Config) error {
 			if b.connErr != nil {
 				err = b.conn.Close()
 				if err == nil {
-					DebugLogger.Printf("Closed connection to broker %s [%s]\n", b.addr, targetAddr)
+					DebugLogger.Printf("Closed connection to broker %s\n", debugFmtAddr)
 				} else {
-					Logger.Printf("Error while closing connection to broker %s [%s]: %s\n", b.addr, targetAddr, err)
+					Logger.Printf("Error while closing connection to broker %s: %s\n", debugFmtAddr, err)
 				}
 				b.conn = nil
 				atomic.StoreInt32(&b.opened, 0)
@@ -241,9 +242,9 @@ func (b *Broker) Open(conf *Config) error {
 		b.responses = make(chan responsePromise, b.conf.Net.MaxOpenRequests-1)
 
 		if b.id >= 0 {
-			DebugLogger.Printf("Connected to broker at %s [%s] (registered as #%d)\n", b.addr, targetAddr, b.id)
+			DebugLogger.Printf("Connected to broker at %s (registered as #%d)\n", debugFmtAddr, b.id)
 		} else {
-			DebugLogger.Printf("Connected to broker at %s [%s]  (unregistered)\n", b.addr, targetAddr)
+			DebugLogger.Printf("Connected to broker at %s (unregistered)\n", debugFmtAddr)
 		}
 		go withRecover(b.responseReceiver)
 	})
@@ -287,6 +288,14 @@ func filterPreferredAddresses(ips []net.IP) []net.IP {
 		}
 	}
 	return out
+}
+
+func prettyAddress(addr, ip string) string {
+	if addr == ip {
+		return addr
+	} else {
+		return fmt.Sprintf("%s/%s", addr, ip)
+	}
 }
 
 // Connected returns true if the broker is connected and false otherwise. If the broker is not
