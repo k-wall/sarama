@@ -175,23 +175,26 @@ func (b *Broker) Open(conf *Config) error {
 			}
 		}()
 
-		if len(b.resolvedAddrs) == 0 {
-			err := resolveAddresses(b)
-			if err != nil {
-				b.connErr = err
-				Logger.Printf("Failed to resolve addresses for broker %s: %s\n", b.addr, b.connErr)
-				atomic.StoreInt32(&b.opened, 0)
-				return
+		var targetAddr string
+		if conf.Net.Proxy.Enable {
+			targetAddr = b.addr
+		} else {
+			if len(b.resolvedAddrs) == 0 {
+				err := resolveAddresses(b)
+				if err != nil {
+					b.connErr = err
+					Logger.Printf("Failed to resolve for broker %s: %s\n", b.addr, b.connErr)
+					atomic.StoreInt32(&b.opened, 0)
+					return
+				}
 			}
+			targetAddr = b.popFirstResolvedAddress()
 		}
 
-		// KWFIXME: handle proxy case
-
-		resolvedAddr := b.popFirstResolvedAddress()
 		dialer := conf.getDialer()
-		b.conn, b.connErr = dialer.Dial("tcp", resolvedAddr)
+		b.conn, b.connErr = dialer.Dial("tcp", targetAddr)
 		if b.connErr != nil {
-			Logger.Printf("Failed to connect to broker %s [%s]: %s\n", b.addr, resolvedAddr, b.connErr)
+			Logger.Printf("Failed to connect to broker %s [%s]: %s\n", b.addr, targetAddr, b.connErr)
 			b.conn = nil
 			atomic.StoreInt32(&b.opened, 0)
 			return
@@ -224,7 +227,7 @@ func (b *Broker) Open(conf *Config) error {
 			if b.connErr != nil {
 				err = b.conn.Close()
 				if err == nil {
-					DebugLogger.Printf("Closed connection to broker %s [%s]\n", b.addr, resolvedAddr)
+					DebugLogger.Printf("Closed connection to broker %s [%s]\n", b.addr, targetAddr)
 				} else {
 					Logger.Printf("Error while closing connection to broker %s: %s\n", b.addr, err)
 				}
