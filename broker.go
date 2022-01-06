@@ -229,7 +229,7 @@ func (b *Broker) Open(conf *Config) error {
 				if err == nil {
 					DebugLogger.Printf("Closed connection to broker %s [%s]\n", b.addr, targetAddr)
 				} else {
-					Logger.Printf("Error while closing connection to broker %s: %s\n", b.addr, err)
+					Logger.Printf("Error while closing connection to broker %s [%s]: %s\n", b.addr, targetAddr, err)
 				}
 				b.conn = nil
 				atomic.StoreInt32(&b.opened, 0)
@@ -241,9 +241,9 @@ func (b *Broker) Open(conf *Config) error {
 		b.responses = make(chan responsePromise, b.conf.Net.MaxOpenRequests-1)
 
 		if b.id >= 0 {
-			DebugLogger.Printf("Connected to broker at %s (registered as #%d)\n", b.addr, b.id)
+			DebugLogger.Printf("Connected to broker at %s [%s] (registered as #%d)\n", b.addr, targetAddr, b.id)
 		} else {
-			DebugLogger.Printf("Connected to broker at %s (unregistered)\n", b.addr)
+			DebugLogger.Printf("Connected to broker at %s [%s]  (unregistered)\n", b.addr, targetAddr)
 		}
 		go withRecover(b.responseReceiver)
 	})
@@ -270,7 +270,7 @@ func resolveAddresses(b *Broker) (err error) {
 			b.resolvedAddrs[i] = fmt.Sprintf("%s:%s", ip.String(), port)
 		}
 	}
-	DebugLogger.Printf("Resolved %s to [%s}\n", b.addr, b.resolvedAddrs)
+	DebugLogger.Printf("Resolved %s to %s\n", b.addr, b.resolvedAddrs)
 	return nil
 }
 
