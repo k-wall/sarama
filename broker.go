@@ -179,6 +179,7 @@ func (b *Broker) Open(conf *Config) error {
 		if conf.Net.Proxy.Enable {
 			targetAddr = b.addr
 		} else {
+			DebugLogger.Printf("Resolved addresses for  %s length %d\n", b.addr, len(b.resolvedAddrs))
 			if len(b.resolvedAddrs) == 0 {
 				err := resolveAddresses(b)
 				if err != nil {
@@ -259,9 +260,17 @@ func resolveAddresses(b *Broker) (err error) {
 	}
 
 	ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip", host)
+
 	if err != nil {
 		return
 	}
+	DebugLogger.Printf("KWDEBUG raw LookupIP %s to %v\n", b.addr, ips)
+	lookupHost, err := net.LookupHost(host)
+	if err != nil {
+		return
+	}
+	DebugLogger.Printf("KWDEBUG raw LookupHost %s to %v\n", b.addr, lookupHost)
+
 	ips = filterPreferredAddresses(ips)
 	b.resolvedAddrs = make([]string, len(ips))
 	for i, ip := range ips {
