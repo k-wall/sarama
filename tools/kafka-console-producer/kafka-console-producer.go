@@ -13,6 +13,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/Shopify/sarama/tools/tls"
+	"github.com/damiannolan/sasl/oauthbearer"
 )
 
 var (
@@ -64,13 +65,21 @@ func main() {
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
 
-	if *userName != "" {
-		config.Net.SASL.Enable = true
-		config.Net.SASL.User = *userName
-		config.Net.SASL.Password = *passwd
-		config.Net.SASL.Version = sarama.SASLHandshakeV1
-		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
-	}
+
+
+	//if *userName != "" {
+	//	config.Net.SASL.Enable = true
+	//	config.Net.SASL.User = *userName
+	//	config.Net.SASL.Password = *passwd
+	//	config.Net.SASL.Version = sarama.SASLHandshakeV1
+	//	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	//}
+
+	tokenURL := "https://identity.api.openshift.com/auth/realms/rhoas/protocol/openid-connect/token"
+	config.Net.SASL.Enable = true
+	config.Net.SASL.Mechanism = sarama.SASLTypeOAuth
+	config.Net.SASL.TokenProvider = oauthbearer.NewTokenProvider(*userName, *passwd, tokenURL)
+
 
 	if *tlsEnabled {
 		tlsConfig, err := tls.NewConfig(*tlsClientCert, *tlsClientKey)
