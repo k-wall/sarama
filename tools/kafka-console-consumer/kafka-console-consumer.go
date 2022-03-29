@@ -17,10 +17,13 @@ import (
 
 var (
 	brokerList    = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The comma separated list of brokers in the Kafka cluster")
+	userName      = flag.String("username", "", "The SASL username")
+	passwd        = flag.String("passwd", "", "The SASL password")
 	topic         = flag.String("topic", "", "REQUIRED: the topic to consume")
 	partitions    = flag.String("partitions", "all", "The partitions to consume, can be 'all' or comma-separated numbers")
 	offset        = flag.String("offset", "newest", "The offset to start with. Can be `oldest`, `newest`")
 	verbose       = flag.Bool("verbose", false, "Whether to turn on sarama logging")
+	version       = flag.String("version", "2.1.1", "Kafka cluster version")
 	tlsEnabled    = flag.Bool("tls-enabled", false, "Whether to enable TLS")
 	tlsSkipVerify = flag.Bool("tls-skip-verify", false, "Whether skip TLS server cert verification")
 	tlsClientCert = flag.String("tls-client-cert", "", "Client cert for client authentication (use with -tls-enabled and -tls-client-key)")
@@ -46,6 +49,11 @@ func main() {
 		sarama.Logger = logger
 	}
 
+	kversion, err := sarama.ParseKafkaVersion(*version)
+	if err != nil {
+		log.Panicf("Error parsing Kafka version: %v", err)
+	}
+
 	var initialOffset int64
 	switch *offset {
 	case "oldest":
@@ -57,6 +65,16 @@ func main() {
 	}
 
 	config := sarama.NewConfig()
+	config.Version = kversion
+
+	if *userName != "" {
+		config.Net.SASL.Enable = true
+		config.Net.SASL.User = *userName
+		config.Net.SASL.Password = *passwd
+		config.Net.SASL.Version = sarama.SASLHandshakeV1
+		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	}
+
 	if *tlsEnabled {
 		tlsConfig, err := tls.NewConfig(*tlsClientCert, *tlsClientKey)
 		if err != nil {
