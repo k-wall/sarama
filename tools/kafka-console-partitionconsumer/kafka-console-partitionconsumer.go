@@ -15,10 +15,13 @@ import (
 
 var (
 	brokerList = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The comma separated list of brokers in the Kafka cluster")
+	userName      = flag.String("username", "", "The SASL username")
+	passwd        = flag.String("passwd", "", "The SASL password")
 	topic      = flag.String("topic", "", "REQUIRED: the topic to consume")
 	partition  = flag.Int("partition", -1, "REQUIRED: the partition to consume")
 	offset     = flag.String("offset", "newest", "The offset to start with. Can be `oldest`, `newest`, or an actual offset")
 	verbose    = flag.Bool("verbose", false, "Whether to turn on sarama logging")
+	version       = flag.String("version", "2.1.1", "Kafka cluster version")
 
 	logger = log.New(os.Stderr, "", log.LstdFlags)
 )
@@ -59,7 +62,23 @@ func main() {
 		printUsageErrorAndExit("Invalid initial offset: %s", *offset)
 	}
 
-	c, err := sarama.NewConsumer(strings.Split(*brokerList, ","), nil)
+	kversion, err := sarama.ParseKafkaVersion(*version)
+	if err != nil {
+		log.Panicf("Error parsing Kafka version: %v", err)
+	}
+
+	config := sarama.NewConfig()
+	config.Version = kversion
+
+	if *userName != "" {
+		config.Net.SASL.Enable = true
+		config.Net.SASL.User = *userName
+		config.Net.SASL.Password = *passwd
+		config.Net.SASL.Version = sarama.SASLHandshakeV1
+		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	}
+
+	c, err := sarama.NewConsumer(strings.Split(*brokerList, ","), config)
 	if err != nil {
 		printErrorAndExit(69, "Failed to start consumer: %s", err)
 	}

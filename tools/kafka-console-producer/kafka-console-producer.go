@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rcrowley/go-metrics"
 
@@ -16,13 +17,18 @@ import (
 
 var (
 	brokerList    = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The comma separated list of brokers in the Kafka cluster. You can also set the KAFKA_PEERS environment variable")
+	userName      = flag.String("username", "", "The SASL username")
+	passwd        = flag.String("passwd", "", "The SASL password")
 	headers       = flag.String("headers", "", "The headers of the message to produce. Example: -headers=foo:bar,bar:foo")
 	topic         = flag.String("topic", "", "REQUIRED: the topic to produce to")
 	key           = flag.String("key", "", "The key of the message to produce. Can be empty.")
 	value         = flag.String("value", "", "REQUIRED: the value of the message to produce. You can also provide the value on stdin.")
 	partitioner   = flag.String("partitioner", "", "The partitioning scheme to use. Can be `hash`, `manual`, or `random`")
 	partition     = flag.Int("partition", -1, "The partition to produce to.")
+	count         = flag.Int("count", 1, "Number of messages to produce, if zero or less messages will be produced indefinitely")
+	sleep         = flag.Duration("sleep", 0, "Time to wait between sending each message")
 	verbose       = flag.Bool("verbose", false, "Turn on sarama logging to stderr")
+	version       = flag.String("version", "2.1.1", "Kafka cluster version")
 	showMetrics   = flag.Bool("metrics", false, "Output metrics on successful publish to stderr")
 	silent        = flag.Bool("silent", false, "Turn off printing the message's topic, partition, and offset to stdout")
 	tlsEnabled    = flag.Bool("tls-enabled", false, "Whether to enable TLS")
@@ -48,9 +54,23 @@ func main() {
 		sarama.Logger = logger
 	}
 
+	kversion, err := sarama.ParseKafkaVersion(*version)
+	if err != nil {
+		log.Panicf("Error parsing Kafka version: %v", err)
+	}
+
 	config := sarama.NewConfig()
+	config.Version = kversion
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
+
+	if *userName != "" {
+		config.Net.SASL.Enable = true
+		config.Net.SASL.User = *userName
+		config.Net.SASL.Password = *passwd
+		config.Net.SASL.Version = sarama.SASLHandshakeV1
+		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	}
 
 	if *tlsEnabled {
 		tlsConfig, err := tls.NewConfig(*tlsClientCert, *tlsClientKey)
@@ -130,11 +150,14 @@ func main() {
 		}
 	}()
 
-	partition, offset, err := producer.SendMessage(message)
-	if err != nil {
-		printErrorAndExit(69, "Failed to produce message: %s", err)
-	} else if !*silent {
-		fmt.Printf("topic=%s\tpartition=%d\toffset=%d\n", *topic, partition, offset)
+	for i := 0; *count < 0 || i < *count; i++ {
+		partition, offset, err := producer.SendMessage(message)
+		if err != nil {
+			printErrorAndExit(69, "Failed to produce message %d: %s", i, err)
+		} else if !*silent {
+			fmt.Printf("topic=%s\tpartition=%d\toffset=%d\n", *topic, partition, offset)
+		}
+		time.Sleep(*sleep)
 	}
 	if *showMetrics {
 		metrics.WriteOnce(config.MetricRegistry, os.Stderr)
