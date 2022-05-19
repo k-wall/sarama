@@ -1,5 +1,8 @@
 package sarama
 
+// APIKeySASLHandshake is the API key for the SaslHandshake Kafka API
+const APIKeySASLHandshake = 17
+
 type SaslHandshakeRequest struct {
 	Mechanism string
 	Version   int16
@@ -22,7 +25,7 @@ func (r *SaslHandshakeRequest) decode(pd packetDecoder, version int16) (err erro
 }
 
 func (r *SaslHandshakeRequest) key() int16 {
-	return 17
+	return APIKeySASLHandshake
 }
 
 func (r *SaslHandshakeRequest) version() int16 {
