@@ -991,6 +991,8 @@ func (b *Broker) sendInternal(rb protocolBody, promise *responsePromise) error {
 
 	promise.requestTime = requestTime
 	promise.correlationID = req.correlationID
+	Logger.Printf("%d/%s: sendInternal: sending request %T %d", b.id, b.conn.LocalAddr(), rb, promise.correlationID)
+
 	b.responses <- promise
 
 	return nil
@@ -1088,6 +1090,9 @@ func (b *Broker) responseReceiver() {
 	var dead error
 
 	for response := range b.responses {
+
+		Logger.Printf("%d/%s responseReceiver: Awaiting response with correlationID  %d\n", b.id, b.conn.LocalAddr(), response.correlationID)
+
 		if dead != nil {
 			// This was previously incremented in send() and
 			// we are not calling updateIncomingCommunicationMetrics()
@@ -1117,6 +1122,8 @@ func (b *Broker) responseReceiver() {
 			continue
 		}
 		if decodedHeader.correlationID != response.correlationID {
+			Logger.Printf("%d/%s responseReceiver: correlation ID didn't match, wanted %d, got %d", b.id, b.conn.LocalAddr(), response.correlationID, decodedHeader.correlationID)
+
 			b.updateIncomingCommunicationMetrics(bytesReadHeader, requestLatency)
 			// TODO if decoded ID < cur ID, discard until we catch up
 			// TODO if decoded ID > cur ID, save it so when cur ID catches up we have a response
@@ -1133,6 +1140,8 @@ func (b *Broker) responseReceiver() {
 			response.handle(nil, err)
 			continue
 		}
+
+		Logger.Printf("%d/%s responseReceiver: got response for %d", b.id, b.conn.LocalAddr(), response.correlationID)
 
 		response.handle(buf, nil)
 	}
