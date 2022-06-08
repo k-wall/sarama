@@ -1,5 +1,7 @@
 package sarama
 
+import "fmt"
+
 type fetchRequestBlock struct {
 	Version int16
 	// currentLeaderEpoch contains the current leader epoch of the partition.
@@ -258,6 +260,10 @@ func (r *FetchRequest) decode(pd packetDecoder, version int16) (err error) {
 	}
 
 	return nil
+}
+
+func (r *FetchRequest) String() string {
+	return fmt.Sprintf("%#v", r)
 }
 
 func (r *FetchRequest) key() int16 {

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"io"
 	"math/rand"
 	"net"
@@ -448,7 +449,7 @@ func (b *Broker) AsyncProduce(request *ProduceRequest, cb ProduceCallback) error
 	return b.sendWithPromise(request, promise)
 }
 
-//Produce returns a produce response or error
+// Produce returns a produce response or error
 func (b *Broker) Produce(request *ProduceRequest) (*ProduceResponse, error) {
 	var (
 		response *ProduceResponse
@@ -991,6 +992,8 @@ func (b *Broker) sendInternal(rb protocolBody, promise *responsePromise) error {
 
 	promise.requestTime = requestTime
 	promise.correlationID = req.correlationID
+	Logger.Printf("%d/%s: sendInternal: sending request %T %+v %d", b.id, b.conn.LocalAddr(), rb, rb, promise.correlationID)
+
 	b.responses <- promise
 
 	return nil
@@ -1011,7 +1014,18 @@ func (b *Broker) sendAndReceive(req protocolBody, res protocolBody) error {
 		return nil
 	}
 
-	return handleResponsePromise(req, res, promise)
+	err = handleResponsePromise(req, res, promise)
+	if err == nil {
+		var addr net.Addr
+		if b.conn != nil {
+			addr = b.conn.LocalAddr()
+		}
+		spew.Config.DisablePointerAddresses = true
+
+		Logger.Printf("%d/%s sendAndReceive: got response %T %s", b.id, addr, res, spew.Sdump(res))
+
+	}
+	return err
 }
 
 func handleResponsePromise(req protocolBody, res protocolBody, promise *responsePromise) error {
@@ -1088,6 +1102,9 @@ func (b *Broker) responseReceiver() {
 	var dead error
 
 	for response := range b.responses {
+
+		Logger.Printf("%d/%s responseReceiver: Awaiting response with correlationID  %d\n", b.id, b.conn.LocalAddr(), response.correlationID)
+
 		if dead != nil {
 			// This was previously incremented in send() and
 			// we are not calling updateIncomingCommunicationMetrics()
@@ -1117,6 +1134,8 @@ func (b *Broker) responseReceiver() {
 			continue
 		}
 		if decodedHeader.correlationID != response.correlationID {
+			Logger.Printf("%d/%s responseReceiver: correlation ID didn't match, wanted %d, got %d", b.id, b.conn.LocalAddr(), response.correlationID, decodedHeader.correlationID)
+
 			b.updateIncomingCommunicationMetrics(bytesReadHeader, requestLatency)
 			// TODO if decoded ID < cur ID, discard until we catch up
 			// TODO if decoded ID > cur ID, save it so when cur ID catches up we have a response
@@ -1133,6 +1152,8 @@ func (b *Broker) responseReceiver() {
 			response.handle(nil, err)
 			continue
 		}
+
+		Logger.Printf("%d/%s responseReceiver: got response for %d %+v", b.id, b.conn.LocalAddr(), response.correlationID, response)
 
 		response.handle(buf, nil)
 	}
